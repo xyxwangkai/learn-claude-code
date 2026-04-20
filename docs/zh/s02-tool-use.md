@@ -86,6 +86,36 @@ for block in response.content:
 | 路径安全       | 无                 | `safe_path()` 沙箱             |
 | Agent loop     | 不变               | 不变                           |
 
+## 调用案例
+
+**用户输入**
+
+```text
+读取 README.md 的前 40 行，然后新建 notes.txt 写入一句总结
+```
+
+**典型调用顺序**
+
+1. `read_file(path="README.md", limit=40)`
+2. 模型根据读到的内容整理一句总结
+3. `write_file(path="notes.txt", content="...")`
+4. 返回完成说明
+
+**终端关键输出**
+
+```text
+> read_file:
+# Learn Claude Code
+...
+
+> write_file:
+Wrote 42 bytes
+```
+
+**这个案例说明了什么**
+
+s02 说明 **新增能力不需要改 agent loop**, 只要给模型注册新工具和对应 handler。
+
 ## 试一试
 
 ```sh

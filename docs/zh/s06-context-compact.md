@@ -112,6 +112,32 @@ def agent_loop(messages: list):
 | Auto-compact   | 无               | token 阈值触发                 |
 | Transcripts    | 无               | 保存到 .transcripts/           |
 
+## 调用案例
+
+**用户输入**
+
+```text
+继续刚才的大型重构任务
+```
+
+**典型调用顺序**
+
+1. Agent 已经读过很多文件、跑过很多命令, `messages` 逐渐膨胀
+2. 调用模型前, harness 先做 `micro_compact`
+3. 如果上下文仍超阈值, 再触发 `auto_compact`, 把完整历史存盘并生成摘要
+4. 模型在压缩后的上下文里继续工作
+
+**终端关键输出**
+
+```text
+[compact] saved transcript to .transcripts/transcript_....jsonl
+[compact] conversation replaced by summary
+```
+
+**这个案例说明了什么**
+
+s06 不是增加新能力, 而是让 Agent **在长会话里还能继续干活而不被历史压死**。
+
 ## 试一试
 
 ```sh

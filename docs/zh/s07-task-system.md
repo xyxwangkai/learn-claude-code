@@ -118,6 +118,36 @@ TOOL_HANDLERS = {
 | 状态追踪 | 做完没做完 | `pending` -> `in_progress` -> `completed` |
 | 持久化 | 压缩后丢失 | 压缩和重启后存活 |
 
+## 调用案例
+
+**用户输入**
+
+```text
+把登录模块重构成 3 个任务：设计接口、实现逻辑、补测试
+```
+
+**典型调用顺序**
+
+1. `task_create(subject="Design login interface")`
+2. `task_create(subject="Implement login logic", blockedBy=[1])`
+3. `task_create(subject="Add login tests", blockedBy=[2])`
+4. 后续查询看板时, Agent 只会看到当前可执行的任务
+
+**终端关键输出**
+
+```text
+> task_create:
+{
+  "id": 1,
+  "status": "pending",
+  ...
+}
+```
+
+**这个案例说明了什么**
+
+s07 把 s03 的平面 todo 升级成 **有依赖、可持久化、可恢复的任务图**。
+
 ## 试一试
 
 ```sh

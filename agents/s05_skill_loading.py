@@ -2,60 +2,27 @@
 # Harness: on-demand knowledge -- domain expertise, loaded when the model asks.
 """
 s05_skill_loading.py - Skills
-
-Two-layer skill injection that avoids bloating the system prompt:
-
-    Layer 1 (cheap): skill names in system prompt (~100 tokens/skill)
-    Layer 2 (on demand): full skill body in tool_result
-
-    skills/
-      pdf/
-        SKILL.md          <-- frontmatter (name, description) + body
-      code-review/
-        SKILL.md
-
-    System prompt:
-    +--------------------------------------+
-    | You are a coding agent.              |
-    | Skills available:                    |
-    |   - pdf: Process PDF files...        |  <-- Layer 1: metadata only
-    |   - code-review: Review code...      |
-    +--------------------------------------+
-
-    When model calls load_skill("pdf"):
-    +--------------------------------------+
-    | tool_result:                         |
-    | <skill>                              |
-    |   Full PDF processing instructions   |  <-- Layer 2: full body
-    |   Step 1: ...                        |
-    |   Step 2: ...                        |
-    | </skill>                             |
-    +--------------------------------------+
-
-Key insight: "Don't put everything in the system prompt. Load on demand."
 """
 
 import os
 import re
 import subprocess
-import yaml
 from pathlib import Path
 
-from anthropic import Anthropic
+import yaml
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 SKILLS_DIR = WORKDIR / "skills"
 
 
-# -- SkillLoader: scan skills/<name>/SKILL.md with YAML frontmatter --
 class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills_dir = skills_dir
@@ -72,7 +39,6 @@ class SkillLoader:
             self.skills[name] = {"meta": meta, "body": body, "path": str(f)}
 
     def _parse_frontmatter(self, text: str) -> tuple:
-        """Parse YAML frontmatter between --- delimiters."""
         match = re.match(r"^---\n(.*?)\n---\n(.*)", text, re.DOTALL)
         if not match:
             return {}, text
@@ -83,7 +49,6 @@ class SkillLoader:
         return meta, match.group(2).strip()
 
     def get_descriptions(self) -> str:
-        """Layer 1: short descriptions for the system prompt."""
         if not self.skills:
             return "(no skills available)"
         lines = []
@@ -97,7 +62,6 @@ class SkillLoader:
         return "\n".join(lines)
 
     def get_content(self, name: str) -> str:
-        """Layer 2: full skill body returned in tool_result."""
         skill = self.skills.get(name)
         if not skill:
             return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
@@ -106,7 +70,6 @@ class SkillLoader:
 
 SKILL_LOADER = SkillLoader(SKILLS_DIR)
 
-# Layer 1: skill metadata injected into system prompt
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
 Use load_skill to access specialized knowledge before tackling unfamiliar topics.
 
@@ -114,12 +77,12 @@ Skills available:
 {SKILL_LOADER.get_descriptions()}"""
 
 
-# -- Tool implementations --
 def safe_path(p: str) -> Path:
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
+
 
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
@@ -133,6 +96,7 @@ def run_bash(command: str) -> str:
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
 
+
 def run_read(path: str, limit: int = None) -> str:
     try:
         lines = safe_path(path).read_text().splitlines()
@@ -142,6 +106,7 @@ def run_read(path: str, limit: int = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def run_write(path: str, content: str) -> str:
     try:
         fp = safe_path(path)
@@ -150,6 +115,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
@@ -187,32 +153,30 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
+            final_text = "\n".join(t for t in adapter.get_text_blocks(response) if t).strip()
+            print(final_text)
             return
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            handler = TOOL_HANDLERS.get(call["name"])
+            try:
+                output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            except Exception as e:
+                output = f"Error: {e}"
+            print(f"> {call['name']}:")
+            print(str(output)[:200])
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms05 >> \033[0m")
+            query = input(f"\033[36ms05[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):

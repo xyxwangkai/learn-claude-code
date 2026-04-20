@@ -27,16 +27,15 @@ import os
 import subprocess
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 TASKS_DIR = WORKDIR / ".tasks"
 
@@ -203,25 +202,21 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
             return
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            handler = TOOL_HANDLERS.get(call["name"])
+            try:
+                output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            except Exception as e:
+                output = f"Error: {e}"
+            print(f"> {call['name']}:")
+            print(str(output)[:200])
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":

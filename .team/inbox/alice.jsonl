@@ -1,0 +1,3 @@
+{"type": "shutdown_request", "from": "lead", "content": "Please shut down gracefully.", "timestamp": 1776665874.8844485, "request_id": "21a251ab"}
+{"type": "message", "from": "lead", "content": "Please auto-claim an available pending unblocked task from the board now, then reply with what you claimed.", "timestamp": 1776666699.9464543}
+{"type": "broadcast", "from": "lead", "content": "Please inspect the task board and auto-claim one available pending task you can start immediately, then reply with the task ID you claimed.", "timestamp": 1776667687.2161617}

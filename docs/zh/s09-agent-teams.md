@@ -111,6 +111,35 @@ def _teammate_loop(self, name, role, prompt):
 | 生命周期       | 一次性           | idle -> working -> idle            |
 | 通信           | 无               | message + broadcast                |
 
+## 调用案例
+
+**用户输入**
+
+```text
+找两个队友，一个检查测试，一个检查文档，我来统筹
+```
+
+**典型调用顺序**
+
+1. `spawn(name="tester", role="test reviewer", prompt="Review the test suite")`
+2. `spawn(name="writer", role="doc reviewer", prompt="Review the docs")`
+3. 主 Agent 通过 `send_message` 给队友补充要求
+4. 队友把结果写回各自 inbox, 主 Agent 汇总
+
+**终端关键输出**
+
+```text
+> spawn:
+Spawned teammate 'tester'
+
+> spawn:
+Spawned teammate 'writer'
+```
+
+**这个案例说明了什么**
+
+s09 的关键不是“再开两个循环”, 而是 **让多个持久 Agent 通过邮箱通信协作**。
+
 ## 试一试
 
 ```sh
@@ -125,3 +154,37 @@ python agents/s09_agent_teams.py
 3. `Check the lead inbox for any messages`
 4. 输入 `/team` 查看团队名册和状态
 5. 输入 `/inbox` 手动检查领导的收件箱
+
+## 一句话总结
+
+- **核心能力**: 把一次性 subagent 升级为可持久存在的 teammate。
+- **数据流关键词**: `spawn -> teammate thread -> JSONL inbox -> read+drain -> 注入上下文`。
+- **你应该记住**: s09 解决的是 **协作问题** —— 队友有身份、有状态、能互相发消息。
+
+## 从输入到结果的数据流
+
+以这句输入为例:
+
+```text
+Spawn alice (coder) and bob (tester). Have alice send bob a message.
+```
+
+典型链路如下:
+
+1. lead 调用 `spawn(name, role, prompt)` 创建 alice / bob。
+2. `config.json` 持久化成员信息, 状态设为 `working`。
+3. 每个 teammate 在独立线程中运行 `_teammate_loop()`。
+4. lead 若想让 alice 联系 bob, 会先给 alice 发消息。
+5. `BUS.send()` 不是直接内存调用, 而是向 `.team/inbox/alice.jsonl` 追加一行 JSON。
+6. alice 下一轮调用 LLM 前执行 `read_inbox("alice")`, 读完并清空收件箱。
+7. alice 根据消息内容再调用 `send_message(to="bob", ...)`。
+8. bob 在自己的下一轮循环里读到来自 alice 的消息。
+
+这里的关键是: **消息不是实时打断式推送, 而是每个 agent 在自己的循环边界主动 read + drain**。
+
+## 本章和前后章节的衔接
+
+- s08 解决 **等待**。
+- s09 解决 **多 Agent 持久化与通信**。
+- s10 则在此基础上进一步引入 **带 request_id 的协议握手**。
+

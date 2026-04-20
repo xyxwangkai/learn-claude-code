@@ -118,6 +118,36 @@ From s07 onward, the task graph is the default for multi-step work. s03's Todo r
 | Status tracking | Done or not | `pending` -> `in_progress` -> `completed` |
 | Persistence | Lost on compression | Survives compression and restarts |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Break the login refactor into 3 tasks: design the interface, implement the logic, and add tests
+```
+
+**Typical call sequence**
+
+1. `task_create(subject="Design login interface")`
+2. `task_create(subject="Implement login logic", blockedBy=[1])`
+3. `task_create(subject="Add login tests", blockedBy=[2])`
+4. Later, when the agent queries the board, it only sees the tasks that are currently unblocked
+
+**Key terminal output**
+
+```text
+> task_create:
+{
+  "id": 1,
+  "status": "pending",
+  ...
+}
+```
+
+**What this shows**
+
+s07 upgrades the flat todo list into a persistent task graph with dependencies and recoverable state.
+
 ## Try It
 
 ```sh

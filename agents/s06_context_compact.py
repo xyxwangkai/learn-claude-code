@@ -2,36 +2,6 @@
 # Harness: compression -- clean memory for infinite sessions.
 """
 s06_context_compact.py - Compact
-
-Three-layer compression pipeline so the agent can work forever:
-
-    Every turn:
-    +------------------+
-    | Tool call result |
-    +------------------+
-            |
-            v
-    [Layer 1: micro_compact]        (silent, every turn)
-      Replace non-read_file tool_result content older than last 3
-      with "[Previous: used {tool_name}]"
-            |
-            v
-    [Check: tokens > 50000?]
-       |               |
-       no              yes
-       |               |
-       v               v
-    continue    [Layer 2: auto_compact]
-                  Save full transcript to .transcripts/
-                  Ask LLM to summarize conversation.
-                  Replace all messages with [summary].
-                        |
-                        v
-                [Layer 3: compact tool]
-                  Model calls compact -> immediate summarization.
-                  Same as auto, triggered manually.
-
-Key insight: "The agent can forget strategically and keep working forever."
 """
 
 import json
@@ -40,99 +10,68 @@ import subprocess
 import time
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks."
 
-THRESHOLD = 50000
+THRESHOLD = 500
 TRANSCRIPT_DIR = WORKDIR / ".transcripts"
 KEEP_RECENT = 3
 PRESERVE_RESULT_TOOLS = {"read_file"}
 
 
 def estimate_tokens(messages: list) -> int:
-    """Rough token count: ~4 chars per token."""
-    return len(str(messages)) // 4
+    num = len(str(messages)) // 4
+    return num
 
 
-# -- Layer 1: micro_compact - replace old tool results with placeholders --
 def micro_compact(messages: list) -> list:
-    # Collect (msg_index, part_index, tool_result_dict) for all tool_result entries
-    tool_results = []
-    for msg_idx, msg in enumerate(messages):
-        if msg["role"] == "user" and isinstance(msg.get("content"), list):
-            for part_idx, part in enumerate(msg["content"]):
-                if isinstance(part, dict) and part.get("type") == "tool_result":
-                    tool_results.append((msg_idx, part_idx, part))
-    if len(tool_results) <= KEEP_RECENT:
-        return messages
-    # Find tool_name for each result by matching tool_use_id in prior assistant messages
-    tool_name_map = {}
-    for msg in messages:
-        if msg["role"] == "assistant":
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                for block in content:
-                    if hasattr(block, "type") and block.type == "tool_use":
-                        tool_name_map[block.id] = block.name
-    # Clear old results (keep last KEEP_RECENT). Preserve read_file outputs because
-    # they are reference material; compacting them forces the agent to re-read files.
-    to_clear = tool_results[:-KEEP_RECENT]
-    for _, _, result in to_clear:
-        if not isinstance(result.get("content"), str) or len(result["content"]) <= 100:
-            continue
-        tool_id = result.get("tool_use_id", "")
-        tool_name = tool_name_map.get(tool_id, "unknown")
-        if tool_name in PRESERVE_RESULT_TOOLS:
-            continue
-        result["content"] = f"[Previous: used {tool_name}]"
-    return messages
+    return adapter.compact_tool_results(messages, KEEP_RECENT, PRESERVE_RESULT_TOOLS)
 
 
-# -- Layer 2: auto_compact - save transcript, summarize, replace messages --
+def summarize_messages(messages: list) -> str:
+    conversation_text = json.dumps(messages, default=str)[-80000:]
+    summary_messages = [{
+        "role": "user",
+        "content": (
+            "Summarize this conversation for continuity. Include: "
+            "1) What was accomplished, 2) Current state, 3) Key decisions made. "
+            "Be concise but preserve critical details.\n\n" + conversation_text
+        ),
+    }]
+    response = adapter.create_response(summary_messages, [], "")
+    summary = "".join(adapter.get_text_blocks(response)).strip()
+    return summary or "No summary generated."
+
+
 def auto_compact(messages: list) -> list:
-    # Save full transcript to disk
     TRANSCRIPT_DIR.mkdir(exist_ok=True)
     transcript_path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with open(transcript_path, "w") as f:
         for msg in messages:
             f.write(json.dumps(msg, default=str) + "\n")
     print(f"[transcript saved: {transcript_path}]")
-    # Ask LLM to summarize
-    conversation_text = json.dumps(messages, default=str)[-80000:]
-    response = client.messages.create(
-        model=MODEL,
-        messages=[{"role": "user", "content":
-            "Summarize this conversation for continuity. Include: "
-            "1) What was accomplished, 2) Current state, 3) Key decisions made. "
-            "Be concise but preserve critical details.\n\n" + conversation_text}],
-        max_tokens=2000,
-    )
-    summary = next((block.text for block in response.content if hasattr(block, "text")), "")
-    if not summary:
-        summary = "No summary generated."
-    # Replace all messages with compressed summary
+    summary = summarize_messages(messages)
     return [
         {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"},
     ]
 
 
-# -- Tool implementations --
 def safe_path(p: str) -> Path:
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
+
 
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
@@ -146,6 +85,7 @@ def run_bash(command: str) -> str:
     except subprocess.TimeoutExpired:
         return "Error: Timeout (120s)"
 
+
 def run_read(path: str, limit: int = None) -> str:
     try:
         lines = safe_path(path).read_text().splitlines()
@@ -155,6 +95,7 @@ def run_read(path: str, limit: int = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def run_write(path: str, content: str) -> str:
     try:
         fp = safe_path(path)
@@ -163,6 +104,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
@@ -200,37 +142,32 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
-        # Layer 1: micro_compact before each LLM call
         micro_compact(messages)
-        # Layer 2: auto_compact if token estimate exceeds threshold
-        if estimate_tokens(messages) > THRESHOLD:
+        if num :=estimate_tokens(messages) > THRESHOLD:
             print("[auto_compact triggered]")
             messages[:] = auto_compact(messages)
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
+            final_text = "\n".join(t for t in adapter.get_text_blocks(response) if t).strip()
+            print(final_text)
             return
         results = []
         manual_compact = False
-        for block in response.content:
-            if block.type == "tool_use":
-                if block.name == "compact":
-                    manual_compact = True
-                    output = "Compressing..."
-                else:
-                    handler = TOOL_HANDLERS.get(block.name)
-                    try:
-                        output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                    except Exception as e:
-                        output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
-        # Layer 3: manual compact triggered by the compact tool
+        for call in adapter.get_tool_calls(response):
+            if call["name"] == "compact":
+                manual_compact = True
+                output = "Compressing..."
+            else:
+                handler = TOOL_HANDLERS.get(call["name"])
+                try:
+                    output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+                except Exception as e:
+                    output = f"Error: {e}"
+            print(f"> {call['name']}:")
+            print(str(output)[:200])
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
         if manual_compact:
             print("[manual compact]")
             messages[:] = auto_compact(messages)
@@ -241,16 +178,14 @@ if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms06 >> \033[0m")
+            query = input(f"\033[36ms06[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):
             break
         history.append({"role": "user", "content": query})
         agent_loop(history)
-        response_content = history[-1]["content"]
-        if isinstance(response_content, list):
-            for block in response_content:
-                if hasattr(block, "text"):
-                    print(block.text)
+        final_text = adapter.get_final_text_from_messages(history)
+        if final_text:
+            print(final_text)
         print()

@@ -82,6 +82,32 @@ The child's entire message history (possibly 30+ tool calls) is discarded. The p
 | Subagent       | None             | `run_subagent()` function |
 | Return value   | N/A              | Summary text only         |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Figure out which test framework this project uses and only tell me the conclusion
+```
+
+**Typical call sequence**
+
+1. The parent agent calls `task(prompt="Inspect the repo and report the test framework.")`
+2. The subagent uses a fresh context to inspect `pyproject.toml`, `requirements.txt`, or the `tests/` directory
+3. The subagent returns a one-line summary, such as `pytest`
+4. The parent agent answers using only that summary
+
+**Key terminal output**
+
+```text
+> task:
+pytest
+```
+
+**What this shows**
+
+s04 keeps noisy exploration inside a child context so the parent agent keeps only the result, not the whole search trace.
+
 ## Try It
 
 ```sh

@@ -95,6 +95,34 @@ The loop stays single-threaded. Only subprocess I/O is parallelized.
 | Notification   | None             | Queue drained per loop     |
 | Concurrency    | None             | Daemon threads             |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Run pytest in the background and keep reviewing the README structure
+```
+
+**Typical call sequence**
+
+1. The model calls `background_run(command="pytest")`
+2. The harness immediately returns a task ID without blocking the main loop
+3. The model keeps using file tools to inspect the README
+4. Before a later model call, the background completion notice is injected into context
+
+**Key terminal output**
+
+```text
+> background_run:
+Background task a1b2c3d4 started
+
+[bg:a1b2c3d4] 12 passed in 2.31s
+```
+
+**What this shows**
+
+s08 lets slow operations run in parallel with reasoning: the harness does the waiting so the model can keep moving.
+
 ## Try It
 
 ```sh

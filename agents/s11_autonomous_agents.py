@@ -43,15 +43,14 @@ import time
 import uuid
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
+load_dotenv(override=True)
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 TEAM_DIR = WORKDIR / ".team"
 INBOX_DIR = TEAM_DIR / "inbox"
@@ -232,35 +231,24 @@ class TeammateManager:
                         return
                     messages.append({"role": "user", "content": json.dumps(msg)})
                 try:
-                    response = client.messages.create(
-                        model=MODEL,
-                        system=sys_prompt,
-                        messages=messages,
-                        tools=tools,
-                        max_tokens=8000,
-                    )
+                    response = adapter.create_response(messages, tools, sys_prompt)
                 except Exception:
                     self._set_status(name, "idle")
                     return
-                messages.append({"role": "assistant", "content": response.content})
-                if response.stop_reason != "tool_use":
+                adapter.append_assistant_message(messages, response)
+                if adapter.get_stop_reason(response) != "tool_use":
                     break
                 results = []
                 idle_requested = False
-                for block in response.content:
-                    if block.type == "tool_use":
-                        if block.name == "idle":
-                            idle_requested = True
-                            output = "Entering idle phase. Will poll for new tasks."
-                        else:
-                            output = self._exec(name, block.name, block.input)
-                        print(f"  [{name}] {block.name}: {str(output)[:120]}")
-                        results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": str(output),
-                        })
-                messages.append({"role": "user", "content": results})
+                for call in adapter.get_tool_calls(response):
+                    if call["name"] == "idle":
+                        idle_requested = True
+                        output = "Entering idle phase. Will poll for new tasks."
+                    else:
+                        output = self._exec(name, call["name"], call["input"])
+                    print(f"  [{name}] {call['name']}: {str(output)[:120]}")
+                    results.append(adapter.make_tool_result(call["id"], str(output)))
+                adapter.append_tool_results(messages, results)
                 if idle_requested:
                     break
 
@@ -525,39 +513,28 @@ def agent_loop(messages: list):
                 "role": "user",
                 "content": f"<inbox>{json.dumps(inbox, indent=2)}</inbox>",
             })
-        response = client.messages.create(
-            model=MODEL,
-            system=SYSTEM,
-            messages=messages,
-            tools=TOOLS,
-            max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
             return
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": str(output),
-                })
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            handler = TOOL_HANDLERS.get(call["name"])
+            try:
+                output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            except Exception as e:
+                output = f"Error: {e}"
+            print(f"> {call['name']}:")
+            print(str(output)[:200])
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms11 >> \033[0m")
+            query = input(f"\033[36ms11[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):

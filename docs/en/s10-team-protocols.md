@@ -92,6 +92,35 @@ One FSM, two applications. The same `pending -> approved | rejected` state machi
 | Correlation    | None             | request_id per request       |
 | FSM            | None             | pending -> approved/rejected |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Have the reviewer submit a refactor plan first, and only start after I approve it
+```
+
+**Typical call sequence**
+
+1. A teammate sends a `plan_approval_request` with a unique `request_id`
+2. The lead agent inspects the proposed plan
+3. The lead replies with `plan_approval_response(request_id=..., approve=true)`
+4. The teammate proceeds only after the approval arrives
+
+**Key terminal output**
+
+```text
+> plan_approval_request:
+request_id=abc12345 status=pending
+
+> plan_approval_response:
+request_id=abc12345 approve=true
+```
+
+**What this shows**
+
+s10 turns loose coordination into a protocol handshake keyed by request IDs.
+
 ## Try It
 
 ```sh

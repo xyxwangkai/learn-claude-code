@@ -112,6 +112,32 @@ Transcripts preserve full history on disk. Nothing is truly lost -- just moved o
 | Auto-compact   | None             | Token threshold trigger    |
 | Transcripts    | None             | Saved to .transcripts/     |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Continue the large refactor we were working on
+```
+
+**Typical call sequence**
+
+1. The agent has already read many files and run many commands, so `messages` grows large
+2. Before the next model call, the harness runs `micro_compact`
+3. If context is still over the threshold, it triggers `auto_compact`, saves the full transcript, and replaces the history with a summary
+4. The model continues from the compacted state
+
+**Key terminal output**
+
+```text
+[compact] saved transcript to .transcripts/transcript_....jsonl
+[compact] conversation replaced by summary
+```
+
+**What this shows**
+
+s06 is about survivability in long sessions: the agent can keep working without being crushed by its own history.
+
 ## Try It
 
 ```sh

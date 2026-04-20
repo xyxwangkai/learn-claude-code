@@ -103,6 +103,38 @@ def agent_loop(query):
 | Messages      | (无)       | 累积式消息列表                 |
 | Control flow  | (无)       | `stop_reason != "tool_use"`    |
 
+## 调用案例
+
+**用户输入**
+
+```text
+列出当前目录下的 Python 文件
+```
+
+**典型调用顺序**
+
+1. 模型调用 `bash`:
+
+```json
+{"name": "bash", "input": {"command": "find . -name '*.py' | head"}}
+```
+
+2. harness 执行命令, 把结果作为 `tool_result` 送回模型。
+3. 模型停止调用工具, 直接给出最终回答。
+
+**终端关键输出**
+
+```text
+> bash:
+./agents/s01_agent_loop.py
+./agents/s02_tool_use.py
+...
+```
+
+**这个案例说明了什么**
+
+s01 的核心就是最小闭环: **模型决定何时用工具, harness 负责执行并把结果喂回去。**
+
 ## 试一试
 
 ```sh

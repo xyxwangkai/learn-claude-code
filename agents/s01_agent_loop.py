@@ -38,19 +38,14 @@ try:
 except ImportError:
     pass
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
 MODEL = os.environ["MODEL_ID"]
-
 SYSTEM = f"You are a coding agent at {os.getcwd()}. Use bash to solve tasks. Act, don't explain."
-
 TOOLS = [{
     "name": "bash",
     "description": "Run a shell command.",
@@ -60,6 +55,9 @@ TOOLS = [{
         "required": ["command"],
     },
 }]
+
+client = build_client()
+adapter = build_adapter(client)
 
 
 def run_bash(command: str) -> str:
@@ -78,43 +76,37 @@ def run_bash(command: str) -> str:
 
 
 # -- The core pattern: a while loop that calls tools until the model stops --
-def agent_loop(messages: list):
+def agent_loop(messages: list) -> str:
+    final_text = ""
     while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        # Append assistant turn
-        messages.append({"role": "assistant", "content": response.content})
-        # If the model didn't call a tool, we're done
-        if response.stop_reason != "tool_use":
-            return
-        # Execute each tool call, collect results
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        final_text = "\n".join(t for t in adapter.get_text_blocks(response) if t).strip()
+
+        if adapter.get_stop_reason(response) != "tool_use":
+            return final_text
+
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                print(f"\033[33m$ {block.input['command']}\033[0m")
-                output = run_bash(block.input["command"])
-                print(output[:200])
-                results.append({"type": "tool_result", "tool_use_id": block.id,
-                                "content": output})
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            command = call["input"].get("command", "")
+            print(f"\033[33m$ {command}\033[0m")
+            output = run_bash(command)
+            print(output[:200])
+            results.append(adapter.make_tool_result(call["id"], output))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms01 >> \033[0m")
+            query = input(f"\033[36ms01[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):
             break
         history.append({"role": "user", "content": query})
-        agent_loop(history)
-        response_content = history[-1]["content"]
-        if isinstance(response_content, list):
-            for block in response_content:
-                if hasattr(block, "text"):
-                    print(block.text)
+        final_text = agent_loop(history)
+        if final_text:
+            print(final_text)
         print()

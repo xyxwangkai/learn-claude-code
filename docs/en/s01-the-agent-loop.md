@@ -103,6 +103,38 @@ That's the entire agent in under 30 lines. Everything else in this course layers
 | Messages      | (none)     | Accumulating list              |
 | Control flow  | (none)     | `stop_reason != "tool_use"`    |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+List the Python files in the current directory
+```
+
+**Typical call sequence**
+
+1. The model calls `bash`:
+
+```json
+{"name": "bash", "input": {"command": "find . -name '*.py' | head"}}
+```
+
+2. The harness runs the command and sends the output back as a `tool_result`.
+3. The model stops using tools and returns a final answer.
+
+**Key terminal output**
+
+```text
+> bash:
+./agents/s01_agent_loop.py
+./agents/s02_tool_use.py
+...
+```
+
+**What this shows**
+
+s01 is the minimal agent loop: **the model decides when to use a tool, and the harness executes it and feeds the result back.**
+
 ## Try It
 
 ```sh

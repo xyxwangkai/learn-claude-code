@@ -107,6 +107,36 @@ After a crash, state reconstructs from `.tasks/` + `.worktrees/index.json` on di
 | Teardown           | Task completion            | Task completion + explicit keep/remove       |
 | Lifecycle visibility | Implicit in logs         | Explicit events in `.worktrees/events.jsonl` |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Run two tasks in parallel: one changes auth and one changes the login UI, without interfering with each other
+```
+
+**Typical call sequence**
+
+1. Create one task for each goal
+2. `worktree_create(name="auth-refactor", task_id=1)`
+3. `worktree_create(name="ui-login", task_id=2)`
+4. Two agents execute commands inside their own worktree directories
+5. On completion, call either `worktree_keep(...)` or `worktree_remove(..., complete_task=True)`
+
+**Key terminal output**
+
+```text
+> worktree_create:
+Created .worktrees/auth-refactor for task 1
+
+> worktree_create:
+Created .worktrees/ui-login for task 2
+```
+
+**What this shows**
+
+s12 pushes isolation all the way down to the filesystem: each task gets its own directory, so parallel edits do not collide.
+
 ## Try It
 
 ```sh

@@ -36,21 +36,21 @@ import re
 import subprocess
 import time
 from pathlib import Path
+from typing import Optional, Union, Dict, List  # 添加必要的导入
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 
 
-def detect_repo_root(cwd: Path) -> Path | None:
+def detect_repo_root(cwd: Path) -> Optional[Path]:  # 修复类型注解
     """Return git repo root if cwd is inside a repo, else None."""
     try:
         r = subprocess.run(
@@ -90,9 +90,9 @@ class EventBus:
     def emit(
         self,
         event: str,
-        task: dict | None = None,
-        worktree: dict | None = None,
-        error: str | None = None,
+        task: Optional[Dict] = None,  # 修复类型注解
+        worktree: Optional[Dict] = None,  # 修复类型注解
+        error: Optional[str] = None,  # 修复类型注解
     ):
         payload = {
             "event": event,
@@ -247,7 +247,7 @@ class WorktreeManager:
         except Exception:
             return False
 
-    def _run_git(self, args: list[str]) -> str:
+    def _run_git(self, args: List[str]) -> str:
         if not self.git_available:
             raise RuntimeError("Not in a git repository. worktree tools require git.")
         r = subprocess.run(
@@ -268,7 +268,7 @@ class WorktreeManager:
     def _save_index(self, data: dict):
         self.index_path.write_text(json.dumps(data, indent=2))
 
-    def _find(self, name: str) -> dict | None:
+    def _find(self, name: str) -> Optional[dict]:
         idx = self._load_index()
         for wt in idx.get("worktrees", []):
             if wt.get("name") == name:
@@ -728,35 +728,22 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
-        response = client.messages.create(
-            model=MODEL,
-            system=SYSTEM,
-            messages=messages,
-            tools=TOOLS,
-            max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
             return
 
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
-                results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": str(output),
-                    }
-                )
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            handler = TOOL_HANDLERS.get(call["name"])
+            try:
+                output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            except Exception as e:
+                output = f"Error: {e}"
+            print(f"> {call['name']}:")
+            print(str(output)[:200])
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":
@@ -767,7 +754,7 @@ if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms12 >> \033[0m")
+            query = input(f"\033[36ms12[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):

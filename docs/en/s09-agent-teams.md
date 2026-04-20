@@ -111,6 +111,35 @@ def _teammate_loop(self, name, role, prompt):
 | Lifecycle      | Fire-and-forget  | idle -> working -> idle    |
 | Communication  | None             | message + broadcast        |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Find two teammates: one to review tests and one to review docs, while I coordinate
+```
+
+**Typical call sequence**
+
+1. `spawn(name="tester", role="test reviewer", prompt="Review the test suite")`
+2. `spawn(name="writer", role="doc reviewer", prompt="Review the docs")`
+3. The lead agent uses `send_message` to add instructions
+4. Each teammate writes results back to its inbox, and the lead summarizes them
+
+**Key terminal output**
+
+```text
+> spawn:
+Spawned teammate 'tester'
+
+> spawn:
+Spawned teammate 'writer'
+```
+
+**What this shows**
+
+s09 is not just “more loops”; it is persistent multi-agent coordination through inbox-style messaging.
+
 ## Try It
 
 ```sh

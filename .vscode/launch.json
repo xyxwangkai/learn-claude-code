@@ -1,0 +1,171 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s01 agent loop",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s01_agent_loop.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s01 (Anthropic)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s01_agent_loop.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "MODEL_PROVIDER": "anthropic"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s01 (Azure OpenAI)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s01_agent_loop.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "MODEL_PROVIDER": "openai_azure"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s02 tool use",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s02_tool_use.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s03 todo write",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s03_todo_write.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s04 subagent",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s04_subagent.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s05 skill loading",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s05_skill_loading.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s06 context compact",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s06_context_compact.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s07 task system",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s07_task_system.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s08 background tasks",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s08_background_tasks.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s09 agent teams",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s09_agent_teams.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s10 team protocols",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s10_team_protocols.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s11 autonomous agents",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s11_autonomous_agents.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s12 worktree task isolation",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s12_worktree_task_isolation.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: s_full",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/agents/s_full.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": false
+    }
+  ]
+}

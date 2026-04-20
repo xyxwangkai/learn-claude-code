@@ -95,6 +95,34 @@ def agent_loop(messages: list):
 | 通知机制       | 无               | 每轮排空的队列                     |
 | 并发           | 无               | 守护线程                           |
 
+## 调用案例
+
+**用户输入**
+
+```text
+后台跑 pytest，同时继续帮我检查 README 结构
+```
+
+**典型调用顺序**
+
+1. 模型调用 `background_run(command="pytest")`
+2. harness 立刻返回任务 ID, 不阻塞主循环
+3. 模型继续调用读文件工具检查 README
+4. 下次调用模型前, 后台任务完成通知被注入上下文
+
+**终端关键输出**
+
+```text
+> background_run:
+Background task a1b2c3d4 started
+
+[bg:a1b2c3d4] 12 passed in 2.31s
+```
+
+**这个案例说明了什么**
+
+s08 让慢操作和思考过程并行: **等待交给 harness, 模型继续往前走。**
+
 ## 试一试
 
 ```sh
@@ -107,3 +135,38 @@ python agents/s08_background_tasks.py
 1. `Run "sleep 5 && echo done" in the background, then create a file while it runs`
 2. `Start 3 background tasks: "sleep 2", "sleep 4", "sleep 6". Check their status.`
 3. `Run pytest in the background and keep working on other things`
+
+## 一句话总结
+
+- **核心能力**: 把慢命令放到后台线程执行, 让主 Agent 不阻塞。
+- **数据流关键词**: `background_run -> thread -> notification_queue -> 下次 LLM 调用前注入`。
+- **你应该记住**: s08 解决的是 **等待问题** —— 等待交给 harness, 模型继续思考和调用其他工具。
+
+## 从输入到结果的数据流
+
+以这句输入为例:
+
+```text
+Run "sleep 5 && echo done" in the background, then create a file while it runs
+```
+
+典型链路如下:
+
+1. 用户输入进入 `messages`。
+2. LLM 根据 system prompt 选择 `background_run(command=...)`。
+3. `BackgroundManager.run()` 立刻:
+   - 生成 `task_id`
+   - 写入 `tasks[task_id] = running`
+   - 启动后台线程
+   - 立即返回 `started` 文本
+4. 主循环继续, LLM 还能再调用 `write_file(...)` 等工具。
+5. 后台线程执行完后, `_execute()` 将结果写入 `_notification_queue`。
+6. **下一次** 调用 LLM 前, `drain_notifications()` 把结果包装成 `<background-results>` 注入上下文。
+
+也就是说, s08 的关键不是“LLM 并行思考”, 而是 **harness 并行执行命令, LLM 非阻塞继续推进任务**。
+
+## 本章和后续章节的衔接
+
+- s08 解决 **单 Agent 如何不被慢命令卡住**。
+- s09 开始解决 **多个 Agent 如何持久存在并彼此通信**。
+

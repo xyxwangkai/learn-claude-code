@@ -86,6 +86,36 @@ Add a tool = add a handler + add a schema entry. The loop never changes.
 | Path safety    | None               | `safe_path()` sandbox      |
 | Agent loop     | Unchanged          | Unchanged                  |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Read the first 40 lines of README.md, then create notes.txt with a one-line summary
+```
+
+**Typical call sequence**
+
+1. `read_file(path="README.md", limit=40)`
+2. The model derives a one-line summary from the file contents
+3. `write_file(path="notes.txt", content="...")`
+4. The model returns a completion message
+
+**Key terminal output**
+
+```text
+> read_file:
+# Learn Claude Code
+...
+
+> write_file:
+Wrote 42 bytes
+```
+
+**What this shows**
+
+s02 shows that **adding a new capability does not require changing the loop**, only registering a new tool and handler.
+
 ## Try It
 
 ```sh

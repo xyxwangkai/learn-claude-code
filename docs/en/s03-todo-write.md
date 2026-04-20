@@ -84,6 +84,98 @@ The "one in_progress at a time" constraint forces sequential focus. The nag remi
 | Nag injection  | None             | `<reminder>` after 3 rounds|
 | Agent loop     | Simple dispatch  | + rounds_since_todo counter|
 
+## Example Walkthrough
+
+Here is a typical s03 call sequence. The point is not the final prose answer, but that the **model writes todos first, then executes against that plan**.
+
+**User prompt**
+
+```text
+Add an example walkthrough for agents/s03_todo_write.py and update the Chinese docs
+```
+
+**Expected first step: call `todo`**
+
+```json
+{
+  "name": "todo",
+  "input": {
+    "items": [
+      {"id": "1", "text": "Read s03 and the current docs", "status": "completed"},
+      {"id": "2", "text": "Draft the example walkthrough", "status": "in_progress"},
+      {"id": "3", "text": "Write docs/zh/s03-todo-write.md", "status": "pending"}
+    ]
+  }
+}
+```
+
+**Then read the target file**
+
+```json
+{
+  "name": "read_file",
+  "input": {
+    "path": "docs/zh/s03-todo-write.md",
+    "limit": 120
+  }
+}
+```
+
+**Then edit or write the document**
+
+```json
+{
+  "name": "edit_file",
+  "input": {
+    "path": "docs/zh/s03-todo-write.md",
+    "old_text": "## Try It",
+    "new_text": "## Example Walkthrough\n...\n\n## Try It"
+  }
+}
+```
+
+**Finally, mark the plan complete**
+
+```json
+{
+  "name": "todo",
+  "input": {
+    "items": [
+      {"id": "1", "text": "Read s03 and the current docs", "status": "completed"},
+      {"id": "2", "text": "Draft the example walkthrough", "status": "completed"},
+      {"id": "3", "text": "Write docs/zh/s03-todo-write.md", "status": "completed"}
+    ]
+  }
+}
+```
+
+**What you would see in the terminal**
+
+```text
+> todo:
+[x] #1: Read s03 and the current docs
+[>] #2: Draft the example walkthrough
+[ ] #3: Write docs/zh/s03-todo-write.md
+
+(1/3 completed)
+
+> read_file:
+# s03: TodoWrite
+...
+
+> edit_file:
+Edited docs/zh/s03-todo-write.md
+
+> todo:
+[x] #1: Read s03 and the current docs
+[x] #2: Draft the example walkthrough
+[x] #3: Write docs/zh/s03-todo-write.md
+
+(3/3 completed)
+```
+
+This captures the core value of s03: **the todo list is not decorative UI for the human; it is explicit execution state that the model maintains through the tool loop.**
+
 ## Try It
 
 ```sh

@@ -95,6 +95,33 @@ TOOL_HANDLERS = {
 | 知识库         | 无               | skills/\*/SKILL.md 文件        |
 | 注入方式       | 无               | 两层 (系统提示 + result)       |
 
+## 调用案例
+
+**用户输入**
+
+```text
+请按 code-review skill 的方式审查这个 Python 文件
+```
+
+**典型调用顺序**
+
+1. 模型先调用 `load_skill(name="code-review")`
+2. harness 返回完整 skill 内容作为 `tool_result`
+3. 模型按这个 skill 的检查清单继续读取代码、给出审查意见
+
+**终端关键输出**
+
+```text
+> load_skill:
+<skill name="code-review">
+...
+</skill>
+```
+
+**这个案例说明了什么**
+
+s05 的重点是 **技能内容按需加载**, 不必一开始把所有流程说明都塞进 system prompt。
+
 ## 试一试
 
 ```sh

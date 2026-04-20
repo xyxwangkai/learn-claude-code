@@ -2,53 +2,33 @@
 # Harness: context isolation -- protecting the model's clarity of thought.
 """
 s04_subagent.py - Subagents
-
-Spawn a child agent with fresh messages=[]. The child works in its own
-context, sharing the filesystem, then returns only a summary to the parent.
-
-    Parent agent                     Subagent
-    +------------------+             +------------------+
-    | messages=[...]   |             | messages=[]      |  <-- fresh
-    |                  |  dispatch   |                  |
-    | tool: task       | ---------->| while tool_use:  |
-    |   prompt="..."   |            |   call tools     |
-    |   description="" |            |   append results |
-    |                  |  summary   |                  |
-    |   result = "..." | <--------- | return last text |
-    +------------------+             +------------------+
-              |
-    Parent context stays clean.
-    Subagent context is discarded.
-
-Key insight: "Process isolation gives context isolation for free."
 """
 
 import os
 import subprocess
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+
+from agents.model_provider import MODEL_PROVIDER, build_adapter, build_client
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
-
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = build_client()
+adapter = build_adapter(client)
 MODEL = os.environ["MODEL_ID"]
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use the task tool to delegate exploration or subtasks."
 SUBAGENT_SYSTEM = f"You are a coding subagent at {WORKDIR}. Complete the given task, then summarize your findings."
 
 
-# -- Tool implementations shared by parent and child --
 def safe_path(p: str) -> Path:
     path = (WORKDIR / p).resolve()
     if not path.is_relative_to(WORKDIR):
         raise ValueError(f"Path escapes workspace: {p}")
     return path
+
 
 def run_bash(command: str) -> str:
     dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
@@ -64,6 +44,7 @@ def run_bash(command: str) -> str:
     except (FileNotFoundError, OSError) as e:
         return f"Error: {e}"
 
+
 def run_read(path: str, limit: int = None) -> str:
     try:
         lines = safe_path(path).read_text().splitlines()
@@ -73,6 +54,7 @@ def run_read(path: str, limit: int = None) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+
 def run_write(path: str, content: str) -> str:
     try:
         fp = safe_path(path)
@@ -81,6 +63,7 @@ def run_write(path: str, content: str) -> str:
         return f"Wrote {len(content)} bytes"
     except Exception as e:
         return f"Error: {e}"
+
 
 def run_edit(path: str, old_text: str, new_text: str) -> str:
     try:
@@ -101,7 +84,6 @@ TOOL_HANDLERS = {
     "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
 }
 
-# Child gets all base tools except task (no recursive spawning)
 CHILD_TOOLS = [
     {"name": "bash", "description": "Run a shell command.",
      "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
@@ -114,29 +96,26 @@ CHILD_TOOLS = [
 ]
 
 
-# -- Subagent: fresh context, filtered tools, summary-only return --
 def run_subagent(prompt: str) -> str:
-    sub_messages = [{"role": "user", "content": prompt}]  # fresh context
-    for _ in range(30):  # safety limit
-        response = client.messages.create(
-            model=MODEL, system=SUBAGENT_SYSTEM, messages=sub_messages,
-            tools=CHILD_TOOLS, max_tokens=8000,
-        )
-        sub_messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+    sub_messages = [{"role": "user", "content": prompt}]
+    response = None
+    for _ in range(30):
+        response = adapter.create_response(sub_messages, CHILD_TOOLS, SUBAGENT_SYSTEM)
+        adapter.append_assistant_message(sub_messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
             break
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)[:50000]})
-        sub_messages.append({"role": "user", "content": results})
-    # Only the final text returns to the parent -- child context is discarded
-    return "".join(b.text for b in response.content if hasattr(b, "text")) or "(no summary)"
+        for call in adapter.get_tool_calls(response):
+            handler = TOOL_HANDLERS.get(call["name"])
+            output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            results.append(adapter.make_tool_result(call["id"], str(output)[:50000]))
+        adapter.append_tool_results(sub_messages, results)
+    if response is None:
+        return "(no summary)"
+    summary = "".join(adapter.get_text_blocks(response)).strip()
+    return summary or "(no summary)"
 
 
-# -- Parent tools: base tools + task dispatcher --
 PARENT_TOOLS = CHILD_TOOLS + [
     {"name": "task", "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
      "input_schema": {"type": "object", "properties": {"prompt": {"type": "string"}, "description": {"type": "string", "description": "Short description of the task"}}, "required": ["prompt"]}},
@@ -145,34 +124,30 @@ PARENT_TOOLS = CHILD_TOOLS + [
 
 def agent_loop(messages: list):
     while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=PARENT_TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
+        response = adapter.create_response(messages, PARENT_TOOLS, SYSTEM)
+        adapter.append_assistant_message(messages, response)
+        if adapter.get_stop_reason(response) != "tool_use":
             return
         results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                if block.name == "task":
-                    desc = block.input.get("description", "subtask")
-                    prompt = block.input.get("prompt", "")
-                    print(f"> task ({desc}): {prompt[:80]}")
-                    output = run_subagent(prompt)
-                else:
-                    handler = TOOL_HANDLERS.get(block.name)
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                print(f"  {str(output)[:200]}")
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
+        for call in adapter.get_tool_calls(response):
+            if call["name"] == "task":
+                desc = call["input"].get("description", "subtask")
+                prompt = call["input"].get("prompt", "")
+                print(f"> task ({desc}): {prompt[:80]}")
+                output = run_subagent(prompt)
+            else:
+                handler = TOOL_HANDLERS.get(call["name"])
+                output = handler(**call["input"]) if handler else f"Unknown tool: {call['name']}"
+            print(f"  {str(output)[:200]}")
+            results.append(adapter.make_tool_result(call["id"], str(output)))
+        adapter.append_tool_results(messages, results)
 
 
 if __name__ == "__main__":
     history = []
     while True:
         try:
-            query = input("\033[36ms04 >> \033[0m")
+            query = input(f"\033[36ms04[{MODEL_PROVIDER}] >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
         if query.strip().lower() in ("q", "exit", ""):

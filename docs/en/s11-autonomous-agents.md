@@ -128,6 +128,33 @@ if len(messages) <= 3:
 | Identity       | System prompt    | + re-injection after compress|
 | Timeout        | None             | 60s idle -> auto shutdown  |
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Start 3 teammates and let them pull work from the task board themselves
+```
+
+**Typical call sequence**
+
+1. The lead agent only needs to start the teammates
+2. Each teammate enters an idle polling loop over the inbox and `.tasks/`
+3. One teammate discovers an unclaimed task and claims it autonomously
+4. After finishing, it returns to idle and looks for the next task
+
+**Key terminal output**
+
+```text
+[alice] claimed task 3
+[bob] claimed task 4
+[carol] idle -> working
+```
+
+**What this shows**
+
+s11 evolves the team from explicit assignment to self-organized task claiming.
+
 ## Try It
 
 ```sh

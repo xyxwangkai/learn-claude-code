@@ -95,6 +95,33 @@ The model learns what skills exist (cheap) and loads them when relevant (expensi
 | Knowledge      | None             | skills/\*/SKILL.md files   |
 | Injection      | None             | Two-layer (system + result)|
 
+## Example Walkthrough
+
+**User prompt**
+
+```text
+Review this Python file using the code-review skill
+```
+
+**Typical call sequence**
+
+1. The model first calls `load_skill(name="code-review")`
+2. The harness returns the full skill body as a `tool_result`
+3. The model follows that checklist to inspect code and produce review feedback
+
+**Key terminal output**
+
+```text
+> load_skill:
+<skill name="code-review">
+...
+</skill>
+```
+
+**What this shows**
+
+s05 keeps workflow knowledge on demand instead of stuffing every skill into the system prompt upfront.
+
 ## Try It
 
 ```sh
