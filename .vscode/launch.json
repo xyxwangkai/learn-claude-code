@@ -22,32 +22,6 @@
       "justMyCode": false
     },
     {
-      "name": "Agent: s01 (Anthropic)",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/agents/s01_agent_loop.py",
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env",
-      "env": {
-        "MODEL_PROVIDER": "anthropic"
-      },
-      "justMyCode": false
-    },
-    {
-      "name": "Agent: s01 (Azure OpenAI)",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/agents/s01_agent_loop.py",
-      "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env",
-      "env": {
-        "MODEL_PROVIDER": "openai_azure"
-      },
-      "justMyCode": false
-    },
-    {
       "name": "Agent: s02 tool use",
       "type": "debugpy",
       "request": "launch",
